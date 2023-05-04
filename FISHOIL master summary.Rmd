@@ -1,0 +1,1669 @@
+---
+title: "FISHOIL Master Summary"
+author: "P Bergstrom"
+date: "Updated 01/05/2023"
+output:
+    html_document:
+      code_folding: hide
+      toc: true
+      toc_float: true
+      theme: spacelab
+      highlight: haddock
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE, message=FALSE}
+# importing the necessary packages (quietly makes them not output annoying info)
+library(ggplot2, quietly=TRUE)
+library(pheatmap, quietly = TRUE)
+library(dplyr, quietly = TRUE)
+library(grid, quietly = TRUE)
+library(ggrepel, quietly=TRUE)
+library(ggbiplot, quietly = TRUE)
+library(mclust, quietly = TRUE)
+library(psych, quietly = TRUE)
+library(reshape2, quietly=TRUE)
+library(limma, quietly = TRUE)
+library(ggfortify, quietly=TRUE)
+library(extrafont, quietly=TRUE)
+library(RColorBrewer, quietly=TRUE)
+library(kableExtra, quietly=TRUE)
+library(readxl, quietly=TRUE)
+library(Hmisc, quietly=TRUE)
+library(corrplot, quietly=TRUE)
+library(rmcorr, quietly=TRUE)
+library(RcmdrMisc, quietly=TRUE)
+```
+
+
+
+
+# Intro
+
+
+``` {r, echo=FALSE}
+# setting universal vectors & defining functions
+sampleorder <- c(165,333,354,444,498,789,886)
+
+loadsheet <- function(sheet) {
+  as.data.frame(
+    read_excel("FISHOIL MASTER SUMMARY.xlsx", sheet=sheet, col_names=TRUE))[,-1]
+}
+
+
+plot <- function(data, title, size) {
+  corrplot(data$r, type="upper", order="hclust", tl.col="black", tl.srt=45, mar=c(0,0,1,0),
+           title=title, tl.cex=size)
+}
+
+
+
+rtable <- function(data) {
+  kable(round(data$r, 2), "html") %>%
+    kable_styling("striped") %>%
+    scroll_box(width="100%", height="350px")
+}
+
+
+
+ptable <- function(data) {
+  kable(round(data$P, 2), "html") %>%
+    kable_styling("striped") %>%
+    scroll_box(width="100%", height="350px")
+}
+
+
+rcorr.adjust2 <- function (x, type = c("pearson", "spearman"), 
+            use = c("complete.obs", "pairwise.complete.obs")) {
+    opt <- options(scipen = 5)
+    on.exit(options(opt))
+    type <- match.arg(type)
+    use <- match.arg(use)
+    x <- if (use == "complete.obs") 
+      as.matrix(na.omit(x))
+    else as.matrix(x)
+    R <- rcorr(x, type = type)
+    P <- P.unadj <- R$P
+    p <- P[lower.tri(P)]
+    adj.p <- p.adjust(p, method="BH")
+    P[lower.tri(P)] <- adj.p
+    P[upper.tri(P)] <- 0
+    P <- P + t(P)
+    P <- ifelse(P < 1e-04, 0, P)
+    P <- format(round(P, 4))
+    diag(P) <- ""
+    P[c(grep("0.0000", P), grep("^ 0$", P))] <- "<.0001"
+    P[grep("0.000$", P)] <- "<.001"
+    P.unadj <- ifelse(P.unadj < 1e-04, 0, P.unadj)
+    P.unadj <- format(round(P.unadj, 4))
+    diag(P.unadj) <- ""
+    P.unadj[c(grep("0.0000$", P.unadj), grep("^ 0$", P.unadj))] <- "<.0001"
+    P.unadj[grep("0.000$", P.unadj)] <- "<.001"
+    result <- list(R = R, P = P, P.unadj = P.unadj, type = type)
+    class(result) <- "rcorr.adjust"
+    result
+}
+```
+
+# POST v PRE Δ
+
+**All values are calculated as Δ = (Post-Pre)**
+
+
+``` {r, echo=FALSE}
+# load pre v post datasets
+protdata_pvp <- loadsheet("Proteomics_PvP 1")
+lipdata_pvp <- loadsheet("Lipids_Post v Pre")
+effdata_pvp <- loadsheet("Efflux_Post v Pre")
+inflamdata_pvp <- loadsheet("Inflam Genes_Post v Pre")
+```
+
+## Comprehensive Narrowed {.tabset}
+
+
+
+### Correlogram 
+
+``` {r, echo=FALSE}
+narrow <- loadsheet("NARROWED")
+
+# running calculations
+nar <- narrow
+rownames(nar) <- sampleorder
+n_cor <- rcorr(as.matrix(nar), type="pearson")
+
+n_rcor <- rcorr.adjust2(as.matrix(nar), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(n_cor, title="Post v Pre: Narrowed", .75)
+
+
+#pvalues <- as.data.frame(n_cor$P)
+#rvalues <- as.data.frame(n_cor$r)
+#BHpvalues <- as.data.frame(n_rcor$P)
+#write.csv(BHpvalues, "/Users/bergstrp/Desktop/FISHOIL figures/FISHOIL cor_narrow BH p values.csv")
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(n_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(n_cor)
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_lip_eff_inf <- cbind(protdata_pvp, lipdata_pvp, effdata_pvp, inflamdata_pvp)
+rownames(prot_lip_eff_inf) <- sampleorder
+plei_cor <- rcorr(as.matrix(prot_lip_eff_inf), type="pearson")
+
+# writing p values to csv file
+#plei_pvalues <- as.data.frame(plei_cor$P)
+#write.csv(plei_pvalues, "/Users/bergstrp/Desktop/FISHOIL figures/FISHOIL cor_all p values.csv")
+#plei_rvalues <- as.data.frame(plei_cor$r)
+#write.csv(plei_rvalues, "/Users/bergstrp/Desktop/FISHOIL figures/FISHOIL cor_all r values.csv")
+
+# adjust p values
+plei_rcor <- RcmdrMisc::rcorr.adjust(as.matrix(prot_lip_eff_inf), type="pearson")
+plei_rcor2 <- rcorr.adjust2(as.matrix(prot_lip_eff_inf), type="pearson")
+#corrplot(plei_rcor$R$r, type="upper", order="hclust", tl.col="black", tl.srt=45)
+#corrplot(plei_rcor2$R$r, type="upper", order="hclust", tl.col="black", tl.srt=45, sig.level=0.0000005, diag=TRUE)
+
+#plei_pvalues <- as.data.frame(plei_rcor$P)
+#write.csv(plei_pvalues, "/Users/bergstrp/Desktop/FISHOIL figures/FISHOIL cor_all Holm p values.csv")
+#plei_pvalues2 <- as.data.frame(plei_rcor2$P)
+#write.csv(plei_pvalues2, "/Users/bergstrp/Desktop/FISHOIL figures/FISHOIL cor_all BH p values.csv")
+
+
+#protAdj <- p.adjust(c(plei_cor$P), method="BH")
+#protAdjLog <- -log10(protAdj)
+#ok <- as.data.frame(protAdj, protAdjLog)
+#prot_prepost <- data.frame(transform(prot_prepost, AdjPValue=protAdj, logAdjPValue=protAdjLog))
+
+
+# plotting correlation matrix with clustering
+plot(plei_cor, title="Post v Pre: Proteomics, Lipidomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(plei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(plei_cor)
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:red">Proteomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_eff_inf <- cbind(protdata_pvp, effdata_pvp, inflamdata_pvp)
+rownames(prot_eff_inf) <- sampleorder
+pei_cor <- rcorr(as.matrix(prot_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(pei_cor, title="Post v Pre: Proteomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(pei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(pei_cor)
+```
+
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+lip_eff_inf <- cbind(lipdata_pvp, effdata_pvp, inflamdata_pvp)
+rownames(lip_eff_inf) <- sampleorder
+lei_cor <- rcorr(as.matrix(lip_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(lei_cor, title="Post v Pre: Lipidomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(lei_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(lei_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_lip_eff <- cbind(protdata_pvp, lipdata_pvp, effdata_pvp)
+rownames(prot_lip_eff) <- sampleorder
+ple_cor <- rcorr(as.matrix(prot_lip_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(ple_cor, title="Post v Pre: Proteomics, Lipidomics, & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(ple_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(ple_cor)
+```
+
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+eff_inf <- cbind(effdata_pvp, inflamdata_pvp)
+rownames(eff_inf) <- sampleorder
+ei_cor <- rcorr(as.matrix(eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(ei_cor, title="Post v Pre: Efflux & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(ei_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(ei_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_lip <- cbind(protdata_pvp, lipdata_pvp)
+rownames(prot_lip) <- sampleorder
+pl_cor <- rcorr(as.matrix(prot_lip), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(pl_cor, title="Post v Pre: Proteomics &Lipidomics", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(pl_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(pl_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_eff <- cbind(protdata_pvp, effdata_pvp)
+rownames(prot_eff) <- sampleorder
+pe_cor <- rcorr(as.matrix(prot_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(pe_cor, title="Post v Pre: Proteomics & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(pe_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(pe_cor)
+```
+
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:black">Inflammatory Genes</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_inf <- cbind(protdata_pvp, inflamdata_pvp)
+rownames(prot_inf) <- sampleorder
+pi_cor <- rcorr(as.matrix(prot_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(pi_cor, title="Post v Pre: Proteomics & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(pi_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(pi_cor)
+```
+
+
+## <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+lip_eff <- cbind(lipdata_pvp, effdata_pvp)
+rownames(lip_eff) <- sampleorder
+le_cor <- rcorr(as.matrix(lip_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(le_cor, title="Post v Pre: Lipidomics & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(le_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(le_cor)
+```
+
+
+## <span style="color:gold">Lipidomics</span> + <span style="color:black">Inflammation</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prot_inf <- cbind(protdata_pvp, inflamdata_pvp)
+rownames(prot_inf) <- sampleorder
+pi_cor <- rcorr(as.matrix(prot_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(pi_cor, title="Post v Pre: Proteomics & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(pi_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(pi_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> {.tabset}
+02/16/2021: **QUESTION:** WHAT DO I DO ABOUT ZEROS IN THE DATASET?? If I convert 0 -> NA, then there are a bunch of question marks and the matrix doesn't work well. But in this case, are we counting zero differences as a value? At first I was assuming not (like the heat maps), but now I don't know.
+
+### Correlograms
+#### Dataset 1: Only proteins that contain a valid Δ value for all 14 samples {.tabset}
+
+*Note:* To be a valid Δ value, both pre and post samples for all 7 patients had to have a value >0. Even if only one sample out of all 14 had a 0 value for a given protein, the protein was excluded.
+102 proteins were excluded because they had only one or none non-zero Δ values.
+
+##### Figure
+
+``` {r, echo=FALSE}
+# running calculations
+prot1 <- protdata_pvp
+rownames(prot1) <- sampleorder
+p_cor1 <- rcorr(as.matrix(prot1), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(p_cor1, title="Post v Pre: Proteomics", .45)
+```
+
+##### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(p_cor1)
+```
+
+
+##### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(p_cor1)
+```
+
+
+#### Dataset 2: Δ not calculated if one pre/post sample = 0 {.tabset}
+
+If either the pre *or* post value for one patient for the given protein was 0, Δ was not calculated and was counted as 0. 0 was kept as a value rather than being converted to NA. 
+62 proteins were excluded because they had only one or none non-zero Δ values.
+
+Given the fact that 0s are staying in, this is probably a skewed picture of these data?
+
+
+##### Figure
+
+``` {r, echo=FALSE}
+# importing proteomics data
+proteins2 <- loadsheet("Proteomics_PvP 2")
+#proteins2[proteins2 == 0] <- NA
+
+# running calculations
+prot2 <- as.data.frame(proteins2)
+rownames(prot2) <- sampleorder
+p_cor2 <- rcorr(as.matrix(prot2), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(p_cor2, title="Post v Pre: Proteomics", .45)
+```
+
+##### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(p_cor2)
+```
+
+##### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(p_cor2)
+```
+
+
+
+
+### Volcano Plots {.tabset}
+
+**Note:** All comparisons are relative to Post - i.e. Post-fish oil samples have significantly *more* PI 36:0 than pre-fish oil samples.
+
+
+**Statistical Analysis:**
+
+- Paired, two-tailed t-test
+- Benjamini-Hochberg adjustment to P values, where FDR = 0.05
+
+
+#### BH-adjusted P values: Bright colors
+
+``` {r}
+# importing  Pre vs Post analysis & making data frame
+proteins_prepost <- read_excel("FISHOIL MASTER SUMMARY.xlsx", sheet="Proteomics_PvP volcano anal (3)", col_names=TRUE)
+prot_prepost <- data.frame("Protein"=proteins_prepost$Protein, "logFC"=proteins_prepost$log2FC,
+                           "logPValue"=proteins_prepost$log10pvalue, "sig"=proteins_prepost$sig,
+                           "label"=proteins_prepost$label, "BHsig"=proteins_prepost$BHsig, "BHlabel"=proteins_prepost$BHlabel)
+
+# calculating BH-adjusted p values
+protAdj <- p.adjust(c(proteins_prepost$pvalue), method="BH")
+protAdjLog <- -log10(protAdj)
+prot_prepost <- data.frame(transform(prot_prepost, AdjPValue=protAdj, logAdjPValue=protAdjLog))
+prot_prepost$sig <- factor(prot_prepost$sig, levels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig"))
+prot_prepost$BHsig <- factor(prot_prepost$BHsig, levels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig"))
+
+# plotting adjusted p values
+ggplot(prot_prepost, aes(x=logFC, y=logAdjPValue)) +
+  geom_point(aes(color=BHsig), alpha=0.7) +
+  scale_color_manual(values=c("firebrick3","black"),
+                     labels=c("|FC|>2","Not Sig")) +
+  labs(title="Post v Pre: Proteomics", x=expression(paste("log"[2],"(FC)")), y=expression(paste("-log"[10],"(Adj P Value)")),
+       color="Significance") +
+  geom_text_repel(data=filter(prot_prepost, BHlabel=="yes"), aes(label=Protein), size=6) +
+  scale_x_continuous(breaks=c(-6,-3,0,3,6)) +
+  theme_bw() +
+  theme(legend.background=element_rect(fill="white", size=0.5, linetype="solid", colour="black"), 
+        axis.title=element_text(size=18), legend.text=element_text(hjust=0,size=14),
+        legend.title=element_text(hjust=0.5,size=18),
+        axis.text=element_text(size=16), plot.title=element_text(hjust=0.5, size=22)) +
+  #geom_text(x=6.5, y=1.33, label="P Value=0.05", color="firebrick3") +
+  geom_vline(xintercept = -1, linetype="dashed", colour="black", alpha=0.5) +
+  geom_vline(xintercept = 1, linetype="dashed", colour="black", alpha=0.5)
+  #geom_hline(yintercept = 1.3, linetype="dashed", colour="firebrick3", alpha=0.5)
+```
+
+
+#### Non-adjusted P values
+
+``` {r, echo=FALSE}
+# plotting non-adjusted p values
+ggplot(prot_prepost, aes(x=logFC, y=logPValue)) +
+  geom_point(aes(color=sig), alpha=0.7) +
+  scale_color_manual(values=c("green3","firebrick3","blue2","black"),
+                     labels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig")) +
+  labs(title="Post v Pre: Proteomics", x=expression(paste("log"[2],"(FC)")), y=expression(paste("-log"[10],"(P Value)")),
+       color="Significance") +
+  geom_text_repel(data=filter(prot_prepost, label=="yes"), aes(label=Protein), size=5) +
+  scale_x_continuous(breaks=c(-6,-3,0,3,6)) +
+  theme_bw() +
+  theme(legend.background=element_rect(fill="white", size=0.5, linetype="solid", colour="black"), 
+        axis.title=element_text(size=18), legend.text=element_text(hjust=0,size=14),
+        legend.title=element_text(hjust=0.5,size=18),
+        axis.text=element_text(size=16), plot.title=element_text(hjust=0.5, size=22)) +
+  geom_text(x=6.5, y=1.33, label="P Value=0.05", color="firebrick3") +
+  geom_vline(xintercept = -1, linetype="dashed", colour="black", alpha=0.5) +
+  geom_vline(xintercept = 1, linetype="dashed", colour="black", alpha=0.5) +
+  geom_hline(yintercept = 1.3, linetype="dashed", colour="firebrick3", alpha=0.5)
+```
+
+## <span style="color:gold">Lipidomics</span> : Only Lipids w/ Signifigance {.tabset}
+
+Out of all the lipid species, only ones that had some level of significance between the two groups were included. Paired t tests were performed between pre/post sample pairs for each lipid species, where p<0.05 was considered significant.
+
+### Correlogram {.tabset}
+
+#### Hierarchical Clustering
+
+``` {r, echo=FALSE}
+# running calculations
+lip <- lipdata_pvp
+rownames(lip) <- sampleorder
+l_cor <- rcorr(as.matrix(lip), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(l_cor, title="Post v Pre: Lipidomics", .45)
+```
+
+#### Table: Correlation values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(l_cor)
+```
+
+#### Table: P values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(l_cor)
+```
+
+
+#### Old sig set from Prism file
+
+This subset was taken from the prism graphs Paul made - any lipids species with a graph that showed signifigance was added to this list. The prism graphs were 3 way comparisons between Pre, Post, and Washout so ANOVAs were performed rather than paired t tests.
+
+``` {r, echo=FALSE}
+# importing lipidomics 
+lipids2 <- loadsheet("Lipids_Post v Pre OLD")
+
+# running calculations
+lip2 <- as.data.frame(lipids2)
+rownames(lip2) <- sampleorder
+l_cor2 <- rcorr(as.matrix(lip2), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(l_cor2, title="Post v Pre: Lipidomics", .45)
+```
+
+
+
+
+### Volcano Plots {.tabset}
+
+**Note:** All comparisons are relative to Post - i.e. Post-fish oil samples have significantly *more* PI 36:0 than pre-fish oil samples.
+
+
+**Statistical Analysis:**
+
+- Paired, two-tailed t-test
+- Benjamini-Hochberg adjustment to P values, where FDR = 0.05
+
+
+
+#### BH-adjusted P values: Bright colors
+
+``` {r}
+# importing  Pre vs Post analysis & making data frame
+lipids_prepost <- read_excel("FISHOIL MASTER SUMMARY.xlsx", sheet="Lipids_All PvP analysis", col_names=TRUE)
+lip_prepost <- data.frame("Lipid"=lipids_prepost$Lipid, "logFC"=lipids_prepost$log2FC, "logPValue"=lipids_prepost$log10pvalue,
+                          "sig"=lipids_prepost$sig, "label"=lipids_prepost$label, "BHsig"=lipids_prepost$BHsig,
+                          "BHlabel"=lipids_prepost$BHlabel)
+
+# calculating BH-adjusted p values
+lipAdj <- p.adjust(c(lipids_prepost$pvalue), method="BH")
+lipAdjLog <- -log10(lipAdj)
+lip_prepost <- data.frame(transform(lip_prepost, AdjPValue=lipAdj, logAdjPValue=lipAdjLog))
+lip_prepost$sig <- factor(lip_prepost$sig, levels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig"))
+lip_prepost$BHsig <- factor(lip_prepost$BHsig, levels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig"))
+
+# plotting adjusted p values
+ggplot(lip_prepost, aes(x=logFC, y=logAdjPValue)) +
+  geom_point(aes(color=BHsig), alpha=0.7) +
+  scale_color_manual(values=c("green3","firebrick3","blue2","black"),
+                     labels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig")) +
+  labs(title="Pre v Post: Lipidomics", x=expression(paste("log"[2],"(FC)")), y=expression(paste("-log"[10],"(Adj P Value)")), color="Significance") +
+  geom_text_repel(data=filter(lip_prepost, BHlabel=="yes"), aes(label=Lipid), size=5) +
+  scale_x_continuous(breaks=c(0,1,2)) +
+  theme_bw() +
+  theme(legend.background=element_rect(fill="white", size=0.5, linetype="solid", colour="black"), 
+        axis.title=element_text(size=18), legend.text=element_text(hjust=0,size=14),
+        legend.title=element_text(hjust=0.5,size=18),
+        axis.text=element_text(size=16), plot.title=element_text(hjust=0.5, size=22)) +
+  geom_text(x=2.25, y=1.33, label="P Value=0.05", color="firebrick3") +
+  geom_vline(xintercept = 1, linetype="dashed", colour="black", alpha=0.5) +
+  geom_hline(yintercept = 1.3, linetype="dashed", colour="firebrick3", alpha=0.5)
+```
+
+#### Non-adjusted P values
+
+``` {r, echo=FALSE}
+# plotting non-adjusted p values
+ggplot(lip_prepost, aes(x=logFC, y=logPValue)) +
+  geom_point(aes(color=sig), alpha=0.7) +
+  scale_color_manual(values=c("green3","firebrick3","blue2","black"),
+                     labels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig")) +
+  labs(title="Post v Pre: Lipidomics", x=expression(paste("log"[2],"(FC)")), y=expression(paste("-log"[10],"(P Value)")), color="Significance") +
+  geom_text_repel(data=filter(lip_prepost, label=="yes"), aes(label=Lipid), size=5) +
+  scale_x_continuous(breaks=c(0,1,2)) +
+  theme_bw() +
+  theme(legend.background=element_rect(fill="white", size=0.5, linetype="solid", colour="black"), 
+        axis.title=element_text(size=18), legend.text=element_text(hjust=0,size=14),
+        legend.title=element_text(hjust=0.5,size=18),
+        axis.text=element_text(size=16), plot.title=element_text(hjust=0.5, size=22)) +
+  geom_text(x=2.25, y=1.33, label="P Value=0.05", color="firebrick3") +
+  geom_vline(xintercept = 1, linetype="dashed", colour="black", alpha=0.5) +
+  geom_hline(yintercept = 1.3, linetype="dashed", colour="firebrick3", alpha=0.5)
+```
+
+#### BH-adjusted P values
+
+``` {r, echo=FALSE}
+# plotting adjusted p values
+ggplot(lip_prepost, aes(x=logFC, y=logAdjPValue)) +
+  geom_point(aes(color=BHsig), alpha=0.7) +
+  scale_color_manual(values=c("orange","firebrick","navy","black"),
+                     labels=c("|FC|>2 & P Value<0.05","|FC|>2","P Value<0.05","Not Sig")) +
+  labs(title="Pre v Post: Lipidomics", x=expression(paste("log"[2],"(FC)")), y=expression(paste("-log"[10],"(Adj P Value)")), color="Significance") +
+  geom_text_repel(data=filter(lip_prepost, BHlabel=="yes"), aes(label=Lipid), size=5) +
+  scale_x_continuous(breaks=c(-1,0,1,2)) +
+  theme_bw() +
+  theme(legend.background=element_rect(fill="white", size=0.5, linetype="solid", colour="black"), 
+        axis.title=element_text(size=18), legend.text=element_text(hjust=0,size=14),
+        legend.title=element_text(hjust=0.5,size=18),
+        axis.text=element_text(size=16), plot.title=element_text(hjust=0.5, size=22)) +
+  geom_vline(xintercept = 1, linetype="dashed", colour="black", alpha=0.5) +
+  geom_hline(yintercept = 1.3, linetype="dashed", colour="firebrick", alpha=0.5)
+```
+
+
+#### Supplemental Table: Fold Change & P Values
+
+
+-making new table with desired data & names
+lprepost_t <- data.frame("Lipid"=lip_prepost$Lipid, "Mean Pre"=lipids_prepost$mean.pre,
+                         "Mean Post"=lipids_prepost$mean.post, "Fold Change"=lipids_prepost$FC,
+                         "P-Value"=lipids_prepost$pvalue, "BH P-Value"=lipids_prepost$BHPValue,
+                         check.names=FALSE, stringsAsFactors=FALSE)
+
+lprepost_t <- data.frame("Lipid"=lipids_prepost$Lipid, "Mean Pre"=format(lipids_prepost$mean.pre, digits=3, nsmall=0),
+                         "Mean Post"=lipids_prepost$mean.post, "Fold Change"=lipids_prepost$FC,
+                         "P-Value"=lipids_prepost$pvalue, "BH P-Value"=lipids_prepost$BHPValue,
+                         check.names=FALSE, stringsAsFactors=FALSE)
+
+-writing a scrollable embedded html table
+kbl(lprepost_t, caption="Pre v Post: Lipidomics") %>%
+  row_spec(0, bold=TRUE) %>%
+  kable_classic(full_width=F, html_font="Times New Roman")
+
+
+
+
+
+
+## <span style="color:blue">Efflux</span>: BHK Geometric Mean {.tabset}
+
+*02/18/21:* I removed whole serum efflux values from this dataset. (It now only contains HDL and PEG efflux)
+
+### Correlation Matrix
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+eff <- effdata_pvp
+rownames(eff) <- sampleorder
+e_cor <- rcorr(as.matrix(eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(e_cor, title="Post v Pre: Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(e_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(e_cor)
+```
+
+
+
+# PRE Samples Only
+
+
+``` {r, echo=FALSE}
+# load pre datasets
+protdata_pre <- loadsheet("Proteomics_Pre")
+lipdata_pre <- loadsheet("Lipids_Pre")
+effdata_pre <- loadsheet("Efflux_Pre")
+inflamdata_pre <-loadsheet("Inflam Genes_Pre")
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_lip_eff_inf <- cbind(protdata_pre, lipdata_pre, effdata_pre, inflamdata_pre)
+rownames(preprot_lip_eff_inf) <- sampleorder
+preplei_cor <- rcorr(as.matrix(preprot_lip_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(preplei_cor, title="Pre: Proteomics, Lipidomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(preplei_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(preplei_cor)
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:red">Proteomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_eff_inf <- cbind(protdata_pre, effdata_pre, inflamdata_pre)
+rownames(preprot_eff_inf) <- sampleorder
+prepei_cor <- rcorr(as.matrix(preprot_eff_inf), type="pearson")
+
+
+# plotting correlation matrix with clustering
+plot(prepei_cor, title="Pre: Proteomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prepei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prepei_cor)
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prelip_eff_inf <- cbind(lipdata_pre, effdata_pre, inflamdata_pre)
+rownames(prelip_eff_inf) <- sampleorder
+prelei_cor <- rcorr(as.matrix(prelip_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prelei_cor, title="Pre: Lipidomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prelei_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prelei_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_lip_eff <- cbind(protdata_pre, lipdata_pre, effdata_pre)
+rownames(preprot_lip_eff) <- sampleorder
+preple_cor <- rcorr(as.matrix(preprot_lip_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(preple_cor, title="Pre: Proteomics, Lipidomics, & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(preple_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(preple_cor)
+```
+
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preeff_inf <- cbind(effdata_pre, inflamdata_pre)
+rownames(preeff_inf) <- sampleorder
+preei_cor <- rcorr(as.matrix(preeff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(preei_cor, title="Pre: Efflux & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(preei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(preei_cor)
+```
+ 
+## <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_lip <- cbind(protdata_pre, lipdata_pre)
+rownames(preprot_lip) <- sampleorder
+prepl_cor <- rcorr(as.matrix(preprot_lip), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prepl_cor, title="Pre: Proteomics & Lipidomics", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prepl_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prepl_cor)
+```
+
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_eff <- cbind(protdata_pre, effdata_pre)
+rownames(preprot_eff) <- sampleorder
+prepe_cor <- rcorr(as.matrix(preprot_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prepe_cor, title="Pre: Proteomics & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prepe_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prepe_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:black">Inflammation</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_inf <- cbind(protdata_pre, inflamdata_pre)
+rownames(preprot_inf) <- sampleorder
+prepi_cor <- rcorr(as.matrix(preprot_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prepi_cor, title="Pre: Proteomics & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prepi_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prepi_cor)
+```
+
+
+## <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+prelip_eff <- cbind(lipdata_pre, effdata_pre)
+rownames(prelip_eff) <- sampleorder
+prele_cor <- rcorr(as.matrix(prelip_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prele_cor, title="Pre: Lipidomics & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prele_cor)
+```
+
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prele_cor)
+```
+
+r, echo=FALSE
+
+le_rcor <- rmcorr(participant=c(165,333,354,444,498,789,886), as.data.frame(lip_eff))
+
+le_rcor <- rcorr(as.matrix(lip_eff), type="pearson")
+
+corrplot(le_rcor$r, type="upper", order="hclust", tl.col="black", tl.srt=45)
+
+rmcorr()
+
+c(165,333,354,444,498,789,886)
+
+
+
+
+## <span style="color:gold">Lipidomics</span> + <span style="color:black">Inflammation</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_inf <- cbind(protdata_pre, inflamdata_pre)
+rownames(preprot_inf) <- sampleorder
+prepi_cor <- rcorr(as.matrix(preprot_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prepi_cor, title="Pre: Proteomics & Inflammatory Genes", .45)         
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prepi_cor)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prepi_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# running calculations
+preprot <- protdata_pre
+rownames(preprot) <- sampleorder
+prep_cor <- rcorr(as.matrix(preprot), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prep_cor, title="Pre: Proteomics", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prep_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prep_cor)
+```
+
+
+## <span style="color:gold">Lipidomics</span> : Only Lipids w/ Signifigance {.tabset}
+Out of all the lipid species, only ones that had some level of significance between two groups were included. I made this list from the graphs Paul made in December.
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# running calculations
+prelip <- lipdata_pre
+rownames(prelip) <- sampleorder
+prel_cor <- rcorr(as.matrix(prelip), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(prel_cor, title="Pre: Lipidomics", .45)
+```
+
+### Table: Correlation values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(prel_cor)
+```
+
+### Table: P values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(prel_cor)
+```
+
+## <span style="color:blue">Efflux</span>: BHK Geometric Mean {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preeff <- effdata_pre
+rownames(preeff) <- sampleorder
+pree_cor <- rcorr(as.matrix(preeff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(pree_cor, title="Pre: BHK Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(pree_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(pree_cor)
+```
+
+
+# POST Samples Only
+
+
+
+``` {r, echo=FALSE}
+# load post datasets
+protdata_post  <- loadsheet("Proteomics_Post")
+lipdata_post <- loadsheet("Lipids_Post")
+effdata_post <- loadsheet("Efflux_Post")
+inflamdata_post <-loadsheet("Inflam Genes_Post")
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postprot_lip_eff_inf <- cbind(protdata_post, lipdata_post, effdata_post, inflamdata_post)
+rownames(postprot_lip_eff_inf) <- sampleorder
+postplei_cor <- rcorr(as.matrix(postprot_lip_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postplei_cor, title="Post: Proteomics, Lipidomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postplei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postplei_cor)
+```
+
+## <span style="color:black">Inflammation</span> + <span style="color:red">Proteomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postprot_eff_inf <- cbind(protdata_post, effdata_post, inflamdata_post)
+rownames(postprot_eff_inf) <- sampleorder
+postpei_cor <- rcorr(as.matrix(postprot_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postpei_cor, title="Post: Proteomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postpei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postpei_cor)
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postlip_eff_inf <- cbind(lipdata_post, effdata_post, inflamdata_post)
+rownames(postlip_eff_inf) <- sampleorder
+postlei_cor <- rcorr(as.matrix(postlip_eff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postlei_cor, title="Post: Lipidomics, Efflux, & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postlei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postlei_cor)
+```
+
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postprot_lip_eff <- cbind(protdata_post, lipdata_post, effdata_post)
+rownames(postprot_lip_eff) <- sampleorder
+postple_cor <- rcorr(as.matrix(postprot_lip_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postple_cor, title="Post: Proteomics, Lipidomics, & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postple_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postple_cor)
+```
+
+
+## <span style="color:black">Inflammation</span> + <span style="color:blue">Efflux</span>  {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+posteff_inf <- cbind(effdata_post, inflamdata_post)
+rownames(posteff_inf) <- sampleorder
+postei_cor <- rcorr(as.matrix(posteff_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postei_cor, title="Post: Efflux & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postei_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postei_cor)
+```
+
+ 
+## <span style="color:red">Proteomics</span> + <span style="color:gold">Lipidomics</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postprot_lip <- cbind(protdata_post, lipdata_post)
+rownames(postprot_lip) <- sampleorder
+postpl_cor <- rcorr(as.matrix(postprot_lip), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postpl_cor, title="Post: Proteomics & Lipidomics", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postpl_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postpl_cor)
+```
+
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postprot_eff <- cbind(protdata_post, effdata_post)
+rownames(postprot_eff) <- sampleorder
+postpe_cor <- rcorr(as.matrix(postprot_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postpe_cor, title="Post: Proteomics & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postpe_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postpe_cor)
+```
+
+
+## <span style="color:red">Proteomics</span> + <span style="color:black">Inflammation</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postprot_inf <- cbind(protdata_post, inflamdata_post)
+rownames(postprot_inf) <- sampleorder
+postpi_cor <- rcorr(as.matrix(postprot_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postpi_cor, title="Post: Proteomics & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postpi_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postpi_cor)
+```
+
+
+
+## <span style="color:gold">Lipidomics</span> + <span style="color:blue">Efflux</span> {.tabset}
+
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+postlip_eff <- cbind(lipdata_post, effdata_post)
+rownames(postlip_eff) <- sampleorder
+postle_cor <- rcorr(as.matrix(postlip_eff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postle_cor, title="Post: Lipidomics & Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postle_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postle_cor)
+```
+
+
+
+## <span style="color:gold">Lipidomics</span> + <span style="color:black">Inflammatory Genes</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+preprot_inf <- cbind(protdata_pre, inflamdata_pre)
+rownames(preprot_inf) <- sampleorder
+prepi_cor <- rcorr(as.matrix(postprot_inf), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postpi_cor, title="Post: Proteomics & Inflammatory Genes", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postpi_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postpi_cor)
+```
+
+
+
+## <span style="color:red">Proteomics</span> {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# running calculations
+postprot <- protdata_post
+rownames(postprot) <- sampleorder
+postp_cor <- rcorr(as.matrix(postprot), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postp_cor, title="Post: Proteomics", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postp_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postp_cor)
+```
+
+
+## <span style="color:gold">Lipidomics</span> : Only Lipids w/ Signifigance {.tabset}
+Out of all the lipid species, only ones that had some level of significance between two groups were included. I made this list from the graphs Paul made in December.
+
+### Correlogram: Hierarchical Clustering
+
+``` {r, echo=FALSE}
+# running calculations
+postlip <- lipdata_post
+rownames(postlip) <- sampleorder
+postl_cor <- rcorr(as.matrix(postlip), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(postl_cor, title="Post: Lipidomics", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(postl_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(postl_cor)
+```
+
+
+
+## <span style="color:blue">Efflux</span>: BHK Geometric Mean {.tabset}
+
+### Correlogram
+
+``` {r, echo=FALSE}
+# combining data & running calculations
+posteff <- effdata_post
+rownames(posteff) <- sampleorder
+poste_cor <- rcorr(as.matrix(posteff), type="pearson")
+
+# plotting correlation matrix with clustering
+plot(poste_cor, title="Post: Efflux", .45)
+```
+
+### Table: Correlation Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+rtable(poste_cor)
+```
+
+### Table: P Values
+
+``` {r, echo=FALSE}
+# writing a scrollable embedded html table
+ptable(poste_cor)
+```
+
+
+
+## For Sara
+
+``` {r, echo=FALSE}
+# running calculations
+sara <- loadsheet("for sara")
+#sara[sara == 0] <- NA
+rownames(sara) <- sampleorder
+sara_cor <- cor(sara)
+
+# plotting correlation matrix w/clustering
+corrplot(sara_cor, type="upper", order="hclust", tl.col="black", tl.srt=45, tl.cex=.75, title="Pre v Post")
+```
+
+le_rcor <- rmcorr(participant=c(165,333,354,444,498,789,886), as.data.frame(lip_eff))
+
+le_rcor <- rcorr(as.matrix(lip_eff), type="pearson")
+
+corrplot(le_rcor$r, type="upper", order="hclust", tl.col="black", tl.srt=45)
+
+rmcorr()
